@@ -1,0 +1,192 @@
+```yaml
+name: Déploiement OpsTrack
+
+on:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+jobs:
+  tests:
+    name: Tests et contrôles
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Installer PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, xml, curl, zip, pdo_mysql
+          tools: composer
+
+      - name: Vérifier les dépendances Composer
+        run: composer validate --strict
+
+      - name: Installer les dépendances PHP
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Vérifier la syntaxe du webhook
+        run: php -l public/hooks.php
+
+      - name: Exécuter les tests Laravel
+        run: php artisan test
+
+      - name: Installer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Installer les dépendances JavaScript
+        run: npm ci
+
+      - name: Construire le frontend
+        run: npm run build
+
+
+  qualification:
+    name: Déploiement qualification
+    needs: tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Déployer sur la qualification
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.QUALIF_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /var/www/html
+
+            echo "=== Vérification du dépôt ==="
+            git status --short
+
+            echo "=== Sauvegarde du commit actuel ==="
+            git rev-parse HEAD
+
+            echo "=== Récupération du code ==="
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "=== Installation des dépendances PHP ==="
+            composer install \
+              --no-dev \
+              --no-interaction \
+              --prefer-dist \
+              --optimize-autoloader
+
+            echo "=== Exécution des migrations ==="
+            php artisan migrate --force
+
+            echo "=== Nettoyage du cache ==="
+            php artisan optimize:clear
+
+            echo "=== Reconstruction du cache Laravel ==="
+            php artisan config:cache
+            php artisan route:cache
+            php artisan view:cache
+
+            echo "=== Installation des dépendances frontend ==="
+            npm ci
+
+            echo "=== Compilation du frontend ==="
+            npm run build
+
+            echo "=== Redémarrage des services ==="
+            sudo systemctl reload apache2 || true
+
+            echo "=== Déploiement qualification terminé ==="
+
+      - name: Smoke test qualification
+        run: |
+          STATUS=$(curl -L -s -o /dev/null -w "%{http_code}" \
+            https://eval-dfs-q-tpl-20265-08.it-students.fr)
+
+          echo "HTTP qualification : $STATUS"
+
+          if [ "$STATUS" != "200" ]; then
+            echo "Échec du smoke test qualification"
+            exit 1
+          fi
+
+          echo "Smoke test qualification OK"
+
+
+  production:
+    name: Déploiement production
+    needs: qualification
+    runs-on: ubuntu-latest
+
+    environment:
+      name: production
+
+    steps:
+      - name: Déployer sur la production
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /var/www/html
+
+            echo "=== Commit actuellement en production ==="
+            PREVIOUS_COMMIT=$(git rev-parse HEAD)
+            echo "Ancien commit : $PREVIOUS_COMMIT"
+
+            echo "=== Récupération du code ==="
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "=== Installation des dépendances PHP ==="
+            composer install \
+              --no-dev \
+              --no-interaction \
+              --prefer-dist \
+              --optimize-autoloader
+
+            echo "=== Exécution des migrations ==="
+            php artisan migrate --force
+
+            echo "=== Nettoyage du cache ==="
+            php artisan optimize:clear
+
+            echo "=== Reconstruction du cache Laravel ==="
+            php artisan config:cache
+            php artisan route:cache
+            php artisan view:cache
+
+            echo "=== Installation des dépendances frontend ==="
+            npm ci
+
+            echo "=== Compilation du frontend ==="
+            npm run build
+
+            echo "=== Redémarrage des services ==="
+            sudo systemctl reload apache2 || true
+
+            echo "=== Commit actuellement déployé ==="
+            git rev-parse HEAD
+
+            echo "=== Déploiement production terminé ==="
+
+      - name: Smoke test production
+        run: |
+          STATUS=$(curl -L -s -o /dev/null -w "%{http_code}" \
+            https://eval-dfs-p-tpl-20265-08.it-students.fr)
+
+          echo "HTTP production : $STATUS"
+
+          if [ "$STATUS" != "200" ]; then
+            echo "Échec du smoke test production"
+            exit 1
+          fi
+
+          echo "Smoke test production OK"
+```
