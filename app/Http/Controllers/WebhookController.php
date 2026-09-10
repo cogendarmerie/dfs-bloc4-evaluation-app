@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Intervention;
 use App\Models\Ticket;
 use App\Services\EventLogService;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -23,14 +24,29 @@ class WebhookController extends Controller
             ]);
         }
 
-        $payload = $request->validate([
+        $validator = validator($request->all(), [
             'ticket_reference' => ['required', 'string'],
             'status' => ['required', 'string'],
             'summary' => ['nullable', 'string'],
-            'external_event_id' => ['nullable', 'string'],
+            'external_event_id' => ['nullable', 'string']
         ]);
 
-        $ticket = Ticket::query()->where('reference', $payload['ticket_reference'])->firstOrFail();
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Payload invalide',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $payload = $validator->validated();
+
+        try {
+            $ticket = Ticket::query()->where('reference', $payload['ticket_reference'])->firstOrFail();
+        } catch (ModelNotFoundException) {
+            return response()->json([
+                'error' => 'Ticket not found, check the refernce'
+            ], 404);
+        }
 
         $intervention = Intervention::query()->create([
             'ticket_id' => $ticket->id,

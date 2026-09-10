@@ -2,6 +2,7 @@ const API_BASE_URL = process.env.LARAVEL_API_BASE_URL ?? "http://localhost:8000/
 const API_TOKEN = process.env.LARAVEL_API_TOKEN ?? "change-me";
 
 export async function fetchTickets() {
+  console.log(API_BASE_URL)
   const response = await fetch(`${API_BASE_URL}/tickets`, {
     headers: {
       Accept: "application/json",
@@ -15,5 +16,5 @@ export async function fetchTickets() {
   }
 
   const payload = await response.json();
-  return payload.items ?? [];
+  return payload.data ?? [];
 }
