@@ -43,10 +43,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
 
       - name: Installer les dependances JavaScript
-        run: npm ci
+        run: npm install
 
       - name: Construire le frontend
         run: npm run build
@@ -91,7 +90,7 @@ jobs:
             php artisan view:cache
 
             echo "Installation des dependances JavaScript"
-            npm ci
+            npm install
 
             echo "Compilation du frontend"
             npm run build
@@ -163,7 +162,7 @@ jobs:
             php artisan view:cache
 
             echo "Installation des dependances JavaScript"
-            npm ci
+            npm install
 
             echo "Compilation du frontend"
             npm run build
