@@ -1,4 +1,4 @@
-name: Déploiement OpsTrack
+name: Deploiement OpsTrack
 
 on:
   push:
@@ -8,12 +8,14 @@ on:
   workflow_dispatch:
 
 jobs:
+
   tests:
-    name: Tests et contrôles
+    name: Tests et controles
     runs-on: ubuntu-latest
 
     steps:
-      - name: Récupérer le code
+
+      - name: Recuperer le code
         uses: actions/checkout@v4
 
       - name: Installer PHP
@@ -23,25 +25,27 @@ jobs:
           extensions: mbstring, xml, curl, zip, pdo_mysql
           tools: composer
 
-      - name: Vérifier les dépendances Composer
-        run: composer validate --strict
-
-      - name: Installer les dépendances PHP
+      - name: Installer les dependances PHP
         run: composer install --no-interaction --prefer-dist --no-progress
 
-      - name: Vérifier la syntaxe du webhook
+      - name: Configurer Laravel pour les tests
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Verifier la syntaxe du webhook
         run: php -l public/hooks.php
 
-      - name: Exécuter les tests Laravel
+      - name: Executer les tests Laravel
         run: php artisan test
 
       - name: Installer Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
+          cache: npm
 
-      - name: Installer les dépendances JavaScript
+      - name: Installer les dependances JavaScript
         run: npm ci
 
       - name: Construire le frontend
@@ -49,12 +53,13 @@ jobs:
 
 
   qualification:
-    name: Déploiement qualification
+    name: Deploiement qualification
     needs: tests
     runs-on: ubuntu-latest
 
     steps:
-      - name: Déployer sur la qualification
+
+      - name: Deployer en qualification
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.QUALIF_HOST }}
@@ -63,54 +68,50 @@ jobs:
           script: |
             cd /var/www/html
 
-            echo "=== Vérification du dépôt ==="
-            git status --short
+            echo "======================================"
+            echo " Deploiement en qualification"
+            echo "======================================"
 
-            echo "=== Sauvegarde du commit actuel ==="
-            git rev-parse HEAD
-
-            echo "=== Récupération du code ==="
+            echo "Recuperation du code"
             git fetch origin main
             git reset --hard origin/main
 
-            echo "=== Installation des dépendances PHP ==="
-            composer install \
-              --no-dev \
-              --no-interaction \
-              --prefer-dist \
-              --optimize-autoloader
+            echo "Installation des dependances PHP"
+            composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
 
-            echo "=== Exécution des migrations ==="
+            echo "Migration de la base de donnees"
             php artisan migrate --force
 
-            echo "=== Nettoyage du cache ==="
+            echo "Nettoyage du cache Laravel"
             php artisan optimize:clear
 
-            echo "=== Reconstruction du cache Laravel ==="
+            echo "Reconstruction du cache Laravel"
             php artisan config:cache
             php artisan route:cache
             php artisan view:cache
 
-            echo "=== Installation des dépendances frontend ==="
+            echo "Installation des dependances JavaScript"
             npm ci
 
-            echo "=== Compilation du frontend ==="
+            echo "Compilation du frontend"
             npm run build
 
-            echo "=== Redémarrage des services ==="
-            sudo systemctl reload apache2 || true
+            echo "Rechargement du serveur web"
+            sudo systemctl reload apache2
 
-            echo "=== Déploiement qualification terminé ==="
+            echo "======================================"
+            echo " Qualification terminee"
+            echo "======================================"
 
       - name: Smoke test qualification
         run: |
           STATUS=$(curl -L -s -o /dev/null -w "%{http_code}" \
             https://eval-dfs-q-tpl-20265-08.it-students.fr)
 
-          echo "HTTP qualification : $STATUS"
+          echo "Code HTTP qualification : $STATUS"
 
           if [ "$STATUS" != "200" ]; then
-            echo "Échec du smoke test qualification"
+            echo "Le smoke test qualification a echoue"
             exit 1
           fi
 
@@ -118,7 +119,7 @@ jobs:
 
 
   production:
-    name: Déploiement production
+    name: Deploiement production
     needs: qualification
     runs-on: ubuntu-latest
 
@@ -126,7 +127,8 @@ jobs:
       name: production
 
     steps:
-      - name: Déployer sur la production
+
+      - name: Deployer en production
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.PROD_HOST }}
@@ -135,55 +137,56 @@ jobs:
           script: |
             cd /var/www/html
 
-            echo "=== Commit actuellement en production ==="
-            PREVIOUS_COMMIT=$(git rev-parse HEAD)
-            echo "Ancien commit : $PREVIOUS_COMMIT"
+            echo "======================================"
+            echo " Deploiement en production"
+            echo "======================================"
 
-            echo "=== Récupération du code ==="
+            echo "Commit actuellement en production"
+            git rev-parse HEAD
+
+            echo "Recuperation du code"
             git fetch origin main
             git reset --hard origin/main
 
-            echo "=== Installation des dépendances PHP ==="
-            composer install \
-              --no-dev \
-              --no-interaction \
-              --prefer-dist \
-              --optimize-autoloader
+            echo "Installation des dependances PHP"
+            composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
 
-            echo "=== Exécution des migrations ==="
+            echo "Migration de la base de donnees"
             php artisan migrate --force
 
-            echo "=== Nettoyage du cache ==="
+            echo "Nettoyage du cache Laravel"
             php artisan optimize:clear
 
-            echo "=== Reconstruction du cache Laravel ==="
+            echo "Reconstruction du cache Laravel"
             php artisan config:cache
             php artisan route:cache
             php artisan view:cache
 
-            echo "=== Installation des dépendances frontend ==="
+            echo "Installation des dependances JavaScript"
             npm ci
 
-            echo "=== Compilation du frontend ==="
+            echo "Compilation du frontend"
             npm run build
 
-            echo "=== Redémarrage des services ==="
-            sudo systemctl reload apache2 || true
+            echo "Rechargement du serveur web"
+            sudo systemctl reload apache2
 
-            echo "=== Commit actuellement déployé ==="
+            echo "Commit actuellement deploye"
             git rev-parse HEAD
 
-            echo "=== Déploiement production terminé ==="
+            echo "======================================"
+            echo " Production terminee"
+            echo "======================================"
 
       - name: Smoke test production
         run: |
           STATUS=$(curl -L -s -o /dev/null -w "%{http_code}" \
             https://eval-dfs-p-tpl-20265-08.it-students.fr)
 
-          echo "HTTP production : $STATUS"
+          echo "Code HTTP production : $STATUS"
 
           if [ "$STATUS" != "200" ]; then
-            echo "Échec du smoke test production"
+            echo "Le smoke test production a echoue"
             exit 1
           fi
 
